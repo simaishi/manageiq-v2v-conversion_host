@@ -1,0 +1,276 @@
+%global python %{__python3}
+BuildRequires: %{py3_dist setuptools}
+BuildRequires: python3-devel
+
+%global rolename v2v-conversion-host
+%global roleprefix oVirt.
+%global ansible_roles_dir ansible/roles
+
+Name:    v2v-conversion-host
+Summary: Set of tools for configuring conversion hosts for ManageIQ
+Version: 1.16.0
+Release: 1%{?release_suffix}%{?dist}
+Source0: https://github.com/oVirt/v2v-conversion-host/releases/download/v%{version}/%{name}-%{version}.tar.gz
+License: ASL 2.0
+Group:          Virtualization/Management
+Url:            http://www.ovirt.org
+
+%description
+A set of tools to configure and use hosts (oVirt, OpenStack) for ManageIQ
+
+Project consists of:
+- Ansible role to setup hosts as conversion host for ManageIQ
+- daemonizing wrapper for virt-v2v
+
+%package ansible
+Summary: Ansible role to setup oVirt host as conversion host for ManageIQ
+Requires: ansible >= 2.8
+BuildArch: noarch
+Provides: ovirt-ansible-v2v-conversion-host = %{version}-%{release}
+Obsoletes: ovirt-ansible-v2v-conversion-host < 1.11.0-1
+
+%description ansible
+Ansible role to setup hosts as conversion host for ManageIQ
+
+%package wrapper
+Summary: Daemonizing wrapper for virt-v2v
+BuildArch: noarch
+Requires: libcgroup-tools
+Requires: python3
+Requires: %{py3_dist pycurl}
+
+%description wrapper
+Daemonizing wrapper for virt-v2v.
+
+%prep
+%setup -c -q
+
+%install
+export DATA_DIR=%{buildroot}%{_datadir}
+export BIN_DIR=%{buildroot}%{_bindir}
+export PYTHON=%{python}
+
+%{python} setup.py install --single-version-externally-managed -O1 --root=$RPM_BUILD_ROOT --record=INSTALLED_FILES
+
+sh build.sh install
+
+# Create symlinks for backward compatibility with
+# ovirt-ansible-v2v-conversion-host. Remove this later.
+mkdir -p %{buildroot}%{_datadir}/ovirt-ansible-v2v-conversion-host/playbooks
+ln -s %{_datadir}/%{name}-ansible/playbooks/conversion_host_check.yml %{buildroot}%{_datadir}/ovirt-ansible-v2v-conversion-host/playbooks/
+ln -s %{_datadir}/%{name}-ansible/playbooks/conversion_host_disable.yml %{buildroot}%{_datadir}/ovirt-ansible-v2v-conversion-host/playbooks/
+ln -s %{_datadir}/%{name}-ansible/playbooks/conversion_host_enable.yml %{buildroot}%{_datadir}/ovirt-ansible-v2v-conversion-host/playbooks/
+# Create symlink for backward compatibility with CFME
+ln -s %{_bindir}/virt-v2v-wrapper %{buildroot}/usr/bin/virt-v2v-wrapper.py
+
+%files ansible
+%{_datadir}/%{ansible_roles_dir}/
+%{_datadir}/%{name}-ansible/
+%{_datadir}/ovirt-ansible-v2v-conversion-host
+%doc README.md
+%doc docs/
+%doc ansible/examples/
+%license LICENSE
+
+%files wrapper -f INSTALLED_FILES
+%{_bindir}/virt-v2v-wrapper*
+%doc README.md
+%doc docs/
+%license LICENSE
+
+%pre wrapper
+# Previously wrapper was installed from role. Remove this rogue file
+# if this is first time we install the RPM.
+if [ $1 -eq 1 -a -f /usr/bin/virt-v2v-wrapper.py ] ; then
+    set -e
+    rm -fv /usr/bin/virt-v2v-wrapper.py
+fi
+
+%changelog
+* Mon Nov 25 2019 Tomáš Golembiovský <tgolembi@redhat.com> 1.16.0-1
+- Ansible changes:
+  * bump requirement to Ansible 2.8
+- Wrapper changes:
+  * Add ability to use a LUKS keys vault (#65)
+  * Check if IP is in subnet before forcing IP on OpenStack port (#62)
+  * Wait for OSP volumes to become ready before transfer (#59)
+  * Modularization of the Python code
+  * Various bugfixes in RHV disk cleanup (#58)
+
+* Tue Aug 13 2019 Tomáš Golembiovský <tgolembi@redhat.com> 1.15.0-1
+- Wrapper changes:
+  * allow subprocess mode for OSP/RHV outputs
+  * make state writing atomic
+  * several minor bugfixes
+
+* Tue Jun 25 2019 Tomáš Golembiovský <tgolembi@redhat.com> 1.14.2-1
+- Wrapper changes:
+  * fixes for Python 3 compatibility
+
+* Tue Jun 18 2019 Tomáš Golembiovský <tgolembi@redhat.com> 1.14.1-1
+- Fix packaging on Fedora
+
+* Fri Jun 14 2019 Tomáš Golembiovský <tgolembi@redhat.com> 1.14.0-1
+- Ansible changes:
+  * ansible: don't remove wrapper package on oVirt hosts (RHBZ#1718829)
+- Wrapper changes:
+  * consume JSON machine readable output from virt-v2v
+  * remove ovirtmgmt bridge from non oVirt command lines
+  * various bugfixes around Python 3 support
+  * remove stray character from Kubernetes URL
+  * few other small bugfixes
+- Kubevirt changes:
+  * move to quay.io
+  * dereference VDDK directory in entrypoint to avoid issues with symlink
+
+* Mon May 13 2019 Tomáš Golembiovský <tgolembi@redhat.com> 1.13.1-1
+- Wrapper changes:
+  * run ssh-agent under same user as virt-v2v (RHBZ#1707983)
+- Kubevirt changes:
+  * expect VDDK on different mount point to simplify deployment
+
+* Thu Apr 18 2019 Tomáš Golembiovský <tgolembi@redhat.com> 1.13.0-1
+- Wrapper changes:
+  * fix VM ID lookup in RHV
+  * store VM ID in state (#23)
+  * drop XDG_RUNTIME_DIR from environment (RHBZ#1700461)
+  * make it possible to skip daemonizing
+- Role changes:
+  * fix creation of .ssh directory (RHBZ#1698548)
+  * fix check task to allow checking SSH transport method (#50)
+- improve Kubevirt conversion, and Kubevirt backend to wrapper
+- fix wrapper symlink for backward compatibility
+
+* Mon Mar 25 2019 Tomáš Golembiovský <tgolembi@redhat.com> 1.12.1-1
+- Wrapper changes:
+  * bugfix: chown tasks file in net_cls cgroup
+  * bugfix: fix missing call to parent constructor
+
+* Sun Mar 24 2019 Tomáš Golembiovský <tgolembi@redhat.com> 1.12.0-1
+- Wrapper changes:
+  * add network throttling
+  * define tag in host class
+  * print VDSM version when RHV version check fails
+  * understand `unlimited` CPU as no limit
+- Roles changes:
+  * added creation of .ssh dir for hosts
+  * uninstall virt-v2v-wrapper package
+
+* Wed Mar 13 2019 Tomáš Golembiovský <tgolembi@redhat.com> 1.11.0-1
+- Wrapper changes:
+  * start virt-v2v in transient systemd unit
+  * allow CPU throttling
+  * extend error reporting to state file
+  * Fix cleanup of OSP volumes on error
+  * Fix incorrect VM name when using SSH transfer
+- Roles changes:
+  * adapt roles for usage from ManageIQ (instead of hosts or oVirt Engine)
+  * makes roles idempotent
+  * small fixies here and there
+
+* Tue Jan 22 2019 Tomáš Golembiovský <tgolembi@redhat.com> 1.9.1-1
+- Wrapper changes:
+  * Fix regex matching OSP volume IDs (BZ#1668049)
+- Roles changes:
+  * Fix path to wrapper in uninstallation task
+  * Change again how we configure SSH keys for VMware; use only single key for
+    all hosts
+
+* Mon Jan  7 2019 Tomáš Golembiovský <tgolembi@redhat.com> 1.9.0-1
+- Wrapper changes:
+  * Prevent passwords leaking in error reports from failed openstack commands
+- Roles changes:
+  * Allow setting SSH connection to VMware hosts via a variable and
+    remove inventory approach for SSH keys
+  * Add ability to set maximum concurrent conversions in ManageIQ
+  * Variabilize certificate validation for ManageIQ
+  * Remove repositories configuration
+
+* Wed Dec  5 2018 Tomáš Golembiovský <tgolembi@redhat.com> 1.8.0-1
+- Wrapper changes:
+  * Fix check for ISO domains in RHV
+  * Set security groups on ports instead of instances (BZ#1654861)
+  * Allow disabling of SSL verification for OSP
+  * Remove OSP volumes from destination project
+  * Fix OSP commands to operate in destination project
+- Roles changes:
+  * Add configuration of SSH transport: install private keys for VMware hosts and set .ssh/config
+  * Add configuration of ca-trust for providers certificates to avoid using insecure connection
+  * Add creation of ManageIQ conversion host record and tagging of associated resource
+  * Allow to not configure VDDK if vddk transport method is not set for conversion host
+  * Tasks heavily reorganized
+  * Remove nbdkit-* uninstallation as it also uninstalls vdsm
+
+* Thu Oct 18 2018 Tomáš Golembiovský <tgolembi@redhat.com> 1.7.0-1
+- Wrapper changes
+  - general refactoring to support different conversion targets
+  - drop dependency on subprocess32
+  - add support for OpenStack
+- Roles changes
+  - add support for OpenStack
+
+* Wed Aug 29 2018 Tomáš Golembiovský <tgolembi@redhat.com> 1.6.3-1
+- Roles changes:
+  - make nbdkit checking code compatible with current EL
+
+* Wed Aug 29 2018 Tomáš Golembiovský <tgolembi@redhat.com> 1.6.2-1
+- Roles changes:
+  - VDDK plugin is not built for new nbdkit
+  - make sure installed packages are at latest version
+  - make sure oVirt SDK is installed
+
+* Fri Aug 10 2018 Tomáš Golembiovský <tgolembi@redhat.com> 1.6.1-1
+- Wrapper fixes:
+  - fixed problem with incorrect disk paths when using SSH transport
+  - accept more names of guest tools ISOs
+  - fix incorrect ordering of guest tools ISOs
+  - add check for virt-v2v capabilities to prevent MAC address based network
+    mapping from failing migration
+
+* Wed Aug  1 2018 Tomáš Golembiovský <tgolembi@redhat.com> 1.6.0-1
+- Wrapper changes:
+  - Fixed issues with handling of UTF-8 names
+  - Added check for existance of guest tools ISO
+  - Added check for minimal oVirt/RHV version
+  - Added --vesrion option
+  - Added support for virt-v2v --mac option
+- Roles changes:
+  - VDDK package URL is optional
+  - Added checks for RHV version and existence of ISO with guest tools
+
+* Sun Jul  1 2018 Tomáš Golembiovský <tgolembi@redhat.com> 1.5.0-1
+- wrapper changes:
+  - clean disks on conversion failure
+  - don't look for ISOs on block storage domains
+
+* Fri Jun 15 2018 Tomáš Golembiovský <tgolembi@redhat.com> 1.4.1-1
+- wrapper: fix problem with missing symbol
+
+* Thu Jun 14 2018 Tomáš Golembiovský <tgolembi@redhat.com> 1.4.0-1
+- wrapper changes:
+  - set stdin for virt-v2v to /dev/null
+  - pass --root=first argument and -oo rhv-verifypeer=false on insecure connection
+  - add support for reading SSH key from input
+- install playbooks into secondary location
+- point to sources on GitHub
+
+* Wed May 30 2018 Tomáš Golembiovský <tgolembi@redhat.com> 1.3.1-1
+- wrapper: fix syntax error
+
+* Wed May 30 2018 Tomáš Golembiovský <tgolembi@redhat.com> 1.3.0-1
+- add SSH transport method
+- changes in wrapper:
+  - use vdsm user
+  - add insecure_connection and install_drivers keys
+
+* Sun May 20 2018 Tomáš Golembiovský <tgolembi@redhat.com> 1.2.0-1
+- wrapper: add version number, assume allocation based on storage
+* Thu Apr 12 2018 Tomáš Golembiovský <tgolembi@redhat.com> 1.1.2-1
+- wrapper: fix license boiler plate
+* Thu Apr 12 2018 Tomáš Golembiovský <tgolembi@redhat.com> 1.1.1-1
+- wrapper: allow just filenames in virtio_win key
+- roles: create nbdkit repo file condionaly
+* Mon Apr  9 2018 Tomáš Golembiovský <tgolembi@redhat.com> 1.1.0-1
+- wrapper: added network_mappings and virtio_win keys to input data
+* Wed Mar 28 2018 Tomáš Golembiovský <tgolembi@redhat.com> 1.0.0-1
+- Initial release
